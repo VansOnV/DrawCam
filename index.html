@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Camera Trace</title>
+<style>
+:root{
+  --panel:rgba(16,18,24,.84); --panel2:rgba(255,255,255,.08); --line:rgba(255,255,255,.14);
+  --text:#f1f3f8; --muted:#a3a9b8; --accent:#ff7a45; --accent2:#ffb08a;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:var(--text);overflow:hidden;
+  font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+svg{width:20px;height:20px;display:block}
+button,input,select{font:inherit;color:inherit}
+[hidden]{display:none!important}
+
+#stage{position:fixed;inset:0;background:#000;touch-action:none;overflow:hidden}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#ov,#hud{position:absolute;inset:0;width:100%;height:100%}
+#ov{touch-action:none}
+#hud{pointer-events:none}
+#gridOv{position:absolute;inset:0;pointer-events:none;opacity:.55;mix-blend-mode:difference}
+
+.glass{background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.btn,.ibtn,.chip{background:var(--panel2);border:1px solid var(--line);border-radius:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn{padding:10px 14px;font-weight:600}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#1a0d06}
+.ibtn{width:46px;height:46px;padding:0;flex:none}
+.chip{padding:7px 11px;font-size:13px}
+.on{background:rgba(255,122,69,.25)!important;border-color:var(--accent)!important;color:var(--accent2)}
+.btn:active,.ibtn:active,.chip:active{transform:scale(.97)}
+.btn:disabled,.ibtn:disabled,.chip:disabled{opacity:.4;pointer-events:none}
+
+/* top bar */
+#top{position:fixed;left:0;right:0;top:0;padding:calc(10px + var(--sat)) calc(12px + var(--sar)) 0 calc(12px + var(--sal));display:flex;gap:8px;align-items:flex-start;pointer-events:none;z-index:5}
+#top>*{pointer-events:auto}
+#status{padding:8px 12px;border-radius:999px;font-size:12px;color:var(--muted);max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp{flex:1;pointer-events:none!important}
+#top .ibtn{width:42px;height:42px}
+
+/* dock */
+#dock{position:fixed;left:0;right:0;bottom:0;padding:0 calc(12px + var(--sar)) calc(12px + var(--sab)) calc(12px + var(--sal));z-index:5;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+#dock>*{pointer-events:auto}
+#bar{border-radius:20px;padding:10px;display:flex;align-items:center;gap:10px}
+#opWrap{flex:1;display:flex;align-items:center;gap:10px;min-width:0;padding:0 4px}
+#opWrap label{color:var(--muted);font-size:12px}
+input[type=range]{width:100%;accent-color:var(--accent);height:28px;margin:0;min-width:0}
+#opV{width:38px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+
+/* sheet */
+#sheet{border-radius:20px;padding:0;max-height:52dvh;display:flex;flex-direction:column;overflow:hidden}
+#tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+#tabs button{flex:1;padding:12px 4px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer}
+#tabs button.act{color:var(--text);border-bottom-color:var(--accent)}
+#sheetBody{overflow-y:auto;padding:12px 14px 14px;-webkit-overflow-scrolling:touch}
+.tab{display:none;flex-direction:column;gap:11px}
+.tab.act{display:flex}
+.field{display:grid;grid-template-columns:86px 1fr 46px;align-items:center;gap:8px}
+.field>span{color:var(--muted);font-size:13px}
+.field output{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.check{display:flex;align-items:center;gap:9px;cursor:pointer}
+input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px}
+input[type=color]{width:40px;height:34px;padding:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+select{background:#20232c;border:1px solid var(--line);border-radius:8px;padding:7px 8px;min-width:0;width:100%}
+.note{color:var(--muted);font-size:12px;line-height:1.5}
+h4{margin:4px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+/* start card */
+#start{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:calc(20px + var(--sat)) calc(20px + var(--sar)) calc(20px + var(--sab)) calc(20px + var(--sal));background:rgba(0,0,0,.72)}
+#startCard{max-width:420px;width:100%;border-radius:24px;padding:24px;display:flex;flex-direction:column;gap:14px}
+#startCard h1{margin:0;font-size:24px;letter-spacing:-.01em}
+#startCard p{margin:0;color:var(--muted)}
+#err{color:#ff9a8f;font-size:13px;line-height:1.5}
+#startSteps{margin:0;padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:4px;font-size:13px}
+
+#showUI{position:fixed;right:calc(10px + var(--sar));top:calc(10px + var(--sat));z-index:6;width:40px;height:40px;border-radius:50%;opacity:.35}
+body:not(.nochrome) #showUI{display:none}
+body.nochrome #top,body.nochrome #dock{display:none}
+#drop{position:fixed;inset:12px;border:2px dashed var(--accent);border-radius:20px;background:rgba(255,122,69,.12);z-index:9;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--accent2);pointer-events:none}
+@media (min-width:700px){
+  #dock{left:50%;right:auto;transform:translateX(-50%);width:min(620px,100%)}
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="ov"></canvas>
+  <div id="gridOv" hidden></div>
+  <canvas id="hud"></canvas>
+</div>
+
+<div id="top">
+  <div id="status" class="glass">Camera off</div>
+  <div class="sp"></div>
+  <button class="ibtn glass" id="btnFull" title="Fullscreen" hidden data-ic="full"></button>
+  <button class="ibtn glass" id="btnHide" title="Hide controls (H)" data-ic="eyeoff"></button>
+</div>
+
+<button class="ibtn glass" id="showUI" title="Show controls" data-ic="eye"></button>
+
+<div id="dock">
+  <div id="sheet" class="glass" hidden>
+    <div id="tabs">
+      <button data-tab="image" class="act">Image</button>
+      <button data-tab="look">Look</button>
+      <button data-tab="camera">Camera</button>
+      <button data-tab="view">View</button>
+    </div>
+    <div id="sheetBody">
+      <section class="tab act" data-tab="image">
+        <label class="field"><span>Size</span><input type="range" id="size" min="5" max="500" step="1"><output id="sizeV"></output></label>
+        <label class="field"><span>Rotate</span><input type="range" id="rot" min="-180" max="180" step="1"><output id="rotV"></output></label>
+        <div class="row">
+          <button class="chip" id="fit">Fit</button>
+          <button class="chip" id="fill">Fill</button>
+          <button class="chip" id="center">Center</button>
+          <button class="chip" id="rotL">↺ 90°</button>
+          <button class="chip" id="rotR">↻ 90°</button>
+          <button class="chip" id="flipH">Flip H</button>
+          <button class="chip" id="flipV">Flip V</button>
+        </div>
+        <div class="note">Drag to move. Pinch to resize and twist. On a computer use the wheel to resize and Shift + wheel to rotate.</div>
+      </section>
+
+      <section class="tab" data-tab="look">
+        <div class="row" id="modeSeg">
+          <button class="chip" data-v="normal">Full image</button>
+          <button class="chip" data-v="outline">Outline only</button>
+        </div>
+        <div id="outlineCtl" style="display:flex;flex-direction:column;gap:11px" hidden>
+          <label class="field"><span>Detail</span><input type="range" id="detail" min="1" max="100"><output id="detailV"></output></label>
+          <div class="row" style="gap:12px"><input type="color" id="lineColor"><span class="note">Line colour. Red or blue lines read well on white paper.</span></div>
+          <label class="check"><input type="checkbox" id="smooth">Smooth out small details</label>
+        </div>
+        <div id="normalCtl" style="display:flex;flex-direction:column;gap:11px">
+          <div class="row" style="gap:18px"><label class="check"><input type="checkbox" id="gray">Grayscale</label><label class="check"><input type="checkbox" id="invert">Invert</label></div>
+          <label class="field"><span>Brightness</span><input type="range" id="bright" min="-100" max="100"><output id="brightV"></output></label>
+          <label class="field"><span>Contrast</span><input type="range" id="contrast" min="-100" max="100"><output id="contrastV"></output></label>
+        </div>
+        <label class="field" style="grid-template-columns:86px 1fr"><span>Blend</span>
+          <select id="blend"><option value="normal">Normal</option><option value="multiply">Multiply (like ink on paper)</option><option value="screen">Screen</option><option value="difference">Difference</option><option value="overlay">Overlay</option></select></label>
+      </section>
+
+      <section class="tab" data-tab="camera">
+        <div class="row">
+          <button class="chip" id="camSwitch">Switch camera</button>
+          <button class="chip" id="camFreeze">Freeze view</button>
+          <button class="chip" id="camTorch" hidden>Light</button>
+          <button class="chip" id="camRestart">Restart camera</button>
+        </div>
+        <label class="field"><span>Zoom</span><input type="range" id="camZoom" min="1" max="4" step="0.05"><output id="camZoomV"></output></label>
+        <div class="note" id="camInfo">Prop your phone above the paper so it does not move. If the view shifts, the overlay will drift from the page.</div>
+      </section>
+
+      <section class="tab" data-tab="view">
+        <label class="check"><input type="checkbox" id="gridOn">Grid</label>
+        <label class="field"><span>Grid cells</span><input type="range" id="gridN" min="2" max="24" step="1"><output id="gridNV"></output></label>
+        <label class="check"><input type="checkbox" id="frameOn">Show image frame while moving</label>
+        <label class="check"><input type="checkbox" id="mirrorOn">Mirror camera</label>
+        <h4>Image file</h4>
+        <div class="row"><button class="chip" id="chooseImg2">Choose another image</button><button class="chip" id="removeImg">Remove image</button></div>
+      </section>
+    </div>
+  </div>
+
+  <div id="bar" class="glass">
+    <button class="ibtn" id="btnImg" title="Choose image" data-ic="image"></button>
+    <div id="opWrap"><label for="op">Opacity</label><input type="range" id="op" min="0" max="100"><span id="opV"></span></div>
+    <button class="ibtn" id="btnLock" title="Lock image in place (L)" data-ic="unlock"></button>
+    <button class="ibtn" id="btnSheet" title="Settings" data-ic="sliders"></button>
+  </div>
+</div>
+
+<div id="start">
+  <div id="startCard" class="glass">
+    <h1>Camera Trace</h1>
+    <p>Show a reference image over your live camera so you can trace it on real paper.</p>
+    <ol id="startSteps">
+      <li>Start the camera and point it at your paper.</li>
+      <li>Choose the image you want to trace.</li>
+      <li>Move and resize it, lock it, then draw while watching the screen.</li>
+    </ol>
+    <div id="err" hidden></div>
+    <button class="btn primary" id="btnStart">Start camera</button>
+    <button class="btn" id="btnPick">Choose image first</button>
+    <button class="btn" id="btnNoCam" style="background:none">Continue without camera</button>
+  </div>
+</div>
+
+<div id="drop" hidden>Drop image to trace</div>
+<input type="file" id="file" accept="image/*" hidden>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const DEG = Math.PI/180, TAU = Math.PI*2;
+const norm = a => { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI; };
+const mk = (w,h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+
+const ICONS = {
+  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>',
+  unlock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 017.5-1.9"/>',
+  sliders:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
+  eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff:'<path d="M17.9 17.9A10.9 10.9 0 0112 20C5 20 1 12 1 12a18.5 18.5 0 015.1-5.9M9.9 4.2A9.1 9.1 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.2 3.2"/><path d="M1 1l22 22"/>',
+  full:'<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>'
+};
+const icon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;
+const setIcon = (el, n) => { el.innerHTML = icon(n); };
+$$('[data-ic]').forEach(el => setIcon(el, el.dataset.ic));
+
+/* ---------- state ---------- */
+const S = { opacity:0.5, blend:'normal', mode:'normal', gray:false, invert:false, bright:0, contrast:0,
+            detail:55, smooth:true, lineColor:'#ff3b30', locked:false, grid:false, gridN:8, frame:true, mirror:false, camZoom:1 };
+const T = { x:0, y:0, s:1, r:0, fx:false, fy:false };
+let src = null, proc = null, facing = 'environment', stream = null, track = null, caps = null, torchOn = false, wake = null, uiHidden = false;
+
+const ov = $('#ov'), octx = ov.getContext('2d'), hud = $('#hud'), hctx = hud.getContext('2d'), vid = $('#cam');
+let dpr = 1, W = 0, H = 0, dirty = true;
+const invalidate = () => { dirty = true; };
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 3); W = window.innerWidth; H = window.innerHeight;
+  for (const c of [ov, hud]){ c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); }
+  invalidate();
+}
+window.addEventListener('resize', resize);
+
+/* ---------- image processing ---------- */
+function processImage(){
+  if (!src){ proc = null; invalidate(); return; }
+  const w = src.width, h = src.height;
+  if (!proc || proc.width !== w || proc.height !== h) proc = mk(w, h);
+  const c = proc.getContext('2d'); c.clearRect(0, 0, w, h); c.drawImage(src, 0, 0);
+  const needs = S.mode === 'outline' || S.gray || S.invert || S.bright || S.contrast;
+  if (needs){
+    const img = c.getImageData(0, 0, w, h), d = img.data;
+    const ct = S.contrast*2.55, cf = (259*(ct+255))/(255*(259-ct)), add = S.bright*2.55;
+    if (S.mode === 'outline'){
+      let lum = new Float32Array(w*h);
+      for (let i = 0, p = 0; i < d.length; i += 4, p++){
+        let l = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        l = (l-128)*cf + 128 + add; lum[p] = l;
+      }
+      if (S.smooth){
+        const t = new Float32Array(w*h);
+        for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++){
+          const p = y*w + x;
+          t[p] = (lum[p-w-1] + lum[p-w] + lum[p-w+1] + lum[p-1] + lum[p]*2 + lum[p+1] + lum[p+w-1] + lum[p+w] + lum[p+w+1]) / 10;
+        }
+        lum = t;
+      }
+      const thr = (100 - S.detail)*1.6, [lr, lg, lb] = [1,3,5].map(i => parseInt(S.lineColor.slice(i, i+2), 16));
+      d.fill(0);
+      for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++){
+        const p = y*w + x;
+        const gx = -lum[p-w-1] - 2*lum[p-1] - lum[p+w-1] + lum[p-w+1] + 2*lum[p+1] + lum[p+w+1];
+        const gy = -lum[p-w-1] - 2*lum[p-w] - lum[p-w+1] + lum[p+w-1] + 2*lum[p+w] + lum[p+w+1];
+        const m = Math.sqrt(gx*gx + gy*gy)/4;
+        const a = clamp((m - thr)*4, 0, 255), o = p*4;
+        d[o] = lr; d[o+1] = lg; d[o+2] = lb; d[o+3] = a;
+      }
+    } else {
+      const useC = S.contrast !== 0 || S.bright !== 0;
+      for (let i = 0; i < d.length; i += 4){
+        let r = d[i], g = d[i+1], b = d[i+2];
+        if (S.gray) r = g = b = 0.299*r + 0.587*g + 0.114*b;
+        if (useC){ r = (r-128)*cf + 128 + add; g = (g-128)*cf + 128 + add; b = (b-128)*cf + 128 + add; }
+        if (S.invert){ r = 255 - r; g = 255 - g; b = 255 - b; }
+        d[i] = r; d[i+1] = g; d[i+2] = b;
+      }
+    }
+    c.putImageData(img, 0, 0);
+  }
+  invalidate();
+}
+let procT = 0;
+const scheduleProcess = () => { clearTimeout(procT); procT = setTimeout(processImage, 90); };
+
+/* ---------- render ---------- */
+const fitScale = () => src ? Math.min(W/src.width, H/src.height) : 1;
+function corners(){
+  const hw = src.width*T.s/2, hh = src.height*T.s/2, c = Math.cos(T.r), s = Math.sin(T.r);
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([x,y]) => ({ x:T.x + c*x - s*y, y:T.y + s*x + c*y }));
+}
+function render(){
+  octx.setTransform(1,0,0,1,0,0); octx.clearRect(0, 0, ov.width, ov.height);
+  hctx.setTransform(1,0,0,1,0,0); hctx.clearRect(0, 0, hud.width, hud.height);
+  ov.style.opacity = S.opacity; ov.style.mixBlendMode = S.blend;
+  if (!proc) return;
+  octx.setTransform(dpr,0,0,dpr,0,0); octx.translate(T.x, T.y); octx.rotate(T.r);
+  octx.scale(T.s*(T.fx?-1:1), T.s*(T.fy?-1:1)); octx.imageSmoothingQuality = 'high';
+  octx.drawImage(proc, -proc.width/2, -proc.height/2);
+  if (!S.locked && S.frame && !uiHidden){
+    hctx.setTransform(dpr,0,0,dpr,0,0); const q = corners();
+    hctx.lineWidth = 3; hctx.strokeStyle = 'rgba(0,0,0,.55)'; hctx.beginPath(); q.forEach((p,i) => i ? hctx.lineTo(p.x,p.y) : hctx.moveTo(p.x,p.y)); hctx.closePath(); hctx.stroke();
+    hctx.lineWidth = 1.5; hctx.strokeStyle = '#ff7a45'; hctx.stroke();
+    hctx.fillStyle = '#ff7a45'; q.forEach(p => { hctx.beginPath(); hctx.arc(p.x, p.y, 5, 0, TAU); hctx.fill(); });
+  }
+}
+(function loop(){ if (dirty){ dirty = false; render(); } requestAnimationFrame(loop); })();
+
+/* ---------- gestures ---------- */
+const pts = new Map(); let g = null, drag = null;
+const stage = $('#stage');
+stage.addEventListener('pointerdown', e => {
+  if (!src || S.locked) return;
+  stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (pts.size === 1){ drag = { x:e.clientX, y:e.clientY, tx:T.x, ty:T.y }; g = null; }
+  else if (pts.size === 2){ drag = null; const [a, b] = [...pts.values()]; g = { d0:Math.max(1, Math.hypot(b.x-a.x, b.y-a.y)), a0:Math.atan2(b.y-a.y, b.x-a.x), c0:{ x:(a.x+b.x)/2, y:(a.y+b.y)/2 }, T0:{ ...T } }; }
+});
+stage.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (g && pts.size >= 2){
+    const [a, b] = [...pts.values()], cx = (a.x+b.x)/2, cy = (a.y+b.y)/2, k = Math.max(1, Math.hypot(b.x-a.x, b.y-a.y))/g.d0, dr = Math.atan2(b.y-a.y, b.x-a.x) - g.a0;
+    const vx = g.T0.x - g.c0.x, vy = g.T0.y - g.c0.y, c = Math.cos(dr), s = Math.sin(dr);
+    T.x = cx + k*(c*vx - s*vy); T.y = cy + k*(s*vx + c*vy); T.s = clamp(g.T0.s*k, 0.005, 40); T.r = norm(g.T0.r + dr);
+    syncSliders(); invalidate();
+  } else if (drag && pts.size === 1){
+    T.x = drag.tx + (e.clientX - drag.x); T.y = drag.ty + (e.clientY - drag.y); invalidate();
+  }
+});
+const up = e => { pts.delete(e.pointerId); g = null; if (pts.size === 1){ const [p] = [...pts.values()]; drag = { x:p.x, y:p.y, tx:T.x, ty:T.y }; } else drag = null; saveSoon(); };
+stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+stage.addEventListener('wheel', e => {
+  if (!src || S.locked) return; e.preventDefault();
+  if (e.shiftKey){ T.r = norm(T.r + (e.deltaY > 0 ? 1 : -1)*3*DEG); }
+  else { const f = Math.exp(-e.deltaY*0.0015), ns = clamp(T.s*f, 0.005, 40), k = ns/T.s; T.x = e.clientX + k*(T.x - e.clientX); T.y = e.clientY + k*(T.y - e.clientY); T.s = ns; }
+  syncSliders(); invalidate(); saveSoon();
+}, { passive:false });
+['gesturestart','gesturechange'].forEach(n => document.addEventListener(n, e => e.preventDefault()));
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- image import ---------- */
+async function loadBitmap(blob){
+  try { return await createImageBitmap(blob, { imageOrientation:'from-image' }); }
+  catch (_){ try { return await createImageBitmap(blob); } catch (__){
+    return await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(blob); }); }
+  }
+}
+async function setImageFromBlob(blob, keepTransform){
+  let bmp; try { bmp = await loadBitmap(blob); } catch (_){ say('Could not read that image'); return false; }
+  const k = Math.min(1, 2000/Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width*k)), h = Math.max(1, Math.round(bmp.height*k));
+  src = mk(w, h); src.getContext('2d').drawImage(bmp, 0, 0, w, h); src._blob = blob;
+  if (!keepTransform) fitImage(false);
+  processImage(); syncSliders(); updateUI(); return true;
+}
+async function importFile(f){
+  if (!f || !f.type.startsWith('image/')){ say('That is not an image'); return; }
+  if (await setImageFromBlob(f, false)){ $('#start').hidden = true; say('Image added. Drag to place it'); saveSoon(); }
+}
+function fitImage(cover){ if (!src) return; const k = Math.min(W/src.width, H/src.height), kc = Math.max(W/src.width, H/src.height); T.s = cover ? kc : k*0.9; T.x = W/2; T.y = H/2; T.r = 0; invalidate(); }
+$('#file').addEventListener('change', e => { importFile(e.target.files[0]); e.target.value = ''; });
+['#btnImg', '#btnPick', '#chooseImg2'].forEach(s => $(s).addEventListener('click', () => $('#file').click()));
+window.addEventListener('paste', e => { const it = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/')); if (it){ importFile(it.getAsFile()); e.preventDefault(); } });
+let dn = 0;
+window.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')){ dn++; $('#drop').hidden = false; } });
+window.addEventListener('dragleave', () => { dn = Math.max(0, dn-1); if (!dn) $('#drop').hidden = true; });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => { e.preventDefault(); dn = 0; $('#drop').hidden = true; importFile(e.dataTransfer.files[0]); });
+$('#removeImg').addEventListener('click', () => { src = null; proc = null; invalidate(); updateUI(); saveSoon(); say('Image removed'); });
+
+/* ---------- camera ---------- */
+let sayT = 0;
+function say(t){ const s = $('#status'); s.textContent = t; clearTimeout(sayT); sayT = setTimeout(updateStatus, 2600); }
+function updateStatus(){ $('#status').textContent = stream ? (vid.paused ? 'Camera frozen' : (facing === 'environment' ? 'Back camera' : 'Front camera')) : 'Camera off'; }
+
+async function startCamera(){
+  const err = $('#err'); err.hidden = true;
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showErr(!window.isSecureContext
+      ? 'The browser blocks the camera on this page because it is not served over HTTPS. Host this file on any HTTPS site (see the steps I sent you), or open it from localhost on a computer.'
+      : 'This browser does not support camera access.'); return false;
+  }
+  stopCamera();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio:false, video:{ facingMode:{ ideal:facing }, width:{ ideal:1920 }, height:{ ideal:1080 } } });
+  } catch (e){
+    stream = null;
+    showErr(e.name === 'NotAllowedError' ? 'Camera permission was denied. Allow camera access for this site in your browser settings, then try again.'
+          : e.name === 'NotFoundError' ? 'No camera was found on this device.'
+          : e.name === 'NotReadableError' ? 'The camera is busy in another app. Close it and try again.'
+          : 'Could not start the camera (' + (e.name || 'error') + ').'); return false;
+  }
+  vid.srcObject = stream; try { await vid.play(); } catch (_){}
+  track = stream.getVideoTracks()[0]; caps = track.getCapabilities ? track.getCapabilities() : {};
+  const st = track.getSettings ? track.getSettings() : {};
+  if (st.facingMode) facing = st.facingMode === 'user' ? 'user' : 'environment';
+  track.addEventListener('ended', () => { say('Camera stopped'); stream = null; updateStatus(); });
+  $('#start').hidden = true; torchOn = false; applyCamZoom(); applyMirror(); updateCamUI(); updateStatus();
+  requestWake(); return true;
+}
+function showErr(t){ const e = $('#err'); e.textContent = t; e.hidden = false; $('#start').hidden = false; }
+function stopCamera(){ if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; track = null; caps = null; vid.srcObject = null; }
+function applyMirror(){
+  const m = S.mirror || facing === 'user', z = hwZoom() ? 1 : S.camZoom;
+  vid.style.transform = `scale(${m ? -z : z}, ${z})`;
+}
+const hwZoom = () => !!(caps && caps.zoom);
+function applyCamZoom(){
+  if (hwZoom()){
+    const z = clamp(S.camZoom, caps.zoom.min, caps.zoom.max);
+    track.applyConstraints({ advanced:[{ zoom:z }] }).catch(() => {});
+  }
+  applyMirror();
+}
+function updateCamUI(){
+  const z = $('#camZoom');
+  if (hwZoom()){ z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, 10); z.step = caps.zoom.step || 0.1; if (S.camZoom < caps.zoom.min) S.camZoom = caps.zoom.min; }
+  else { z.min = 1; z.max = 4; z.step = 0.05; }
+  z.value = S.camZoom; $('#camZoomV').textContent = (+S.camZoom).toFixed(1) + '×';
+  $('#camTorch').hidden = !(caps && caps.torch); $('#camTorch').classList.toggle('on', torchOn);
+  $('#camFreeze').classList.toggle('on', vid.paused); $('#camFreeze').textContent = vid.paused ? 'Resume view' : 'Freeze view';
+  $('#camInfo').textContent = stream
+    ? (hwZoom() ? 'Using the camera\'s own zoom. Prop your phone above the paper so it does not move.' : 'Using digital zoom. Prop your phone above the paper so it does not move.')
+    : 'Camera is off. Tap Restart camera to turn it on.';
+}
+$('#btnStart').addEventListener('click', startCamera);
+$('#camRestart').addEventListener('click', startCamera);
+$('#btnNoCam').addEventListener('click', () => { $('#start').hidden = true; updateStatus(); });
+$('#camSwitch').addEventListener('click', async () => { facing = facing === 'environment' ? 'user' : 'environment'; if (!(await startCamera())) { facing = facing === 'environment' ? 'user' : 'environment'; } });
+$('#camFreeze').addEventListener('click', () => { if (!stream) return; vid.paused ? vid.play() : vid.pause(); updateCamUI(); updateStatus(); });
+$('#camTorch').addEventListener('click', async () => { if (!track) return; torchOn = !torchOn; try { await track.applyConstraints({ advanced:[{ torch:torchOn }] }); } catch (_){ torchOn = false; } updateCamUI(); });
+$('#camZoom').addEventListener('input', e => { S.camZoom = +e.target.value; $('#camZoomV').textContent = S.camZoom.toFixed(1) + '×'; applyCamZoom(); });
+async function requestWake(){ try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (_){} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stream) requestWake(); });
+
+/* ---------- UI wiring ---------- */
+function syncSliders(){
+  if (!src) return;
+  const base = fitScale(); $('#size').value = clamp(Math.round(T.s/base*100), 5, 500); $('#sizeV').textContent = Math.round(T.s/base*100) + '%';
+  $('#rot').value = Math.round(T.r/DEG); $('#rotV').textContent = Math.round(T.r/DEG) + '°';
+}
+function updateUI(){
+  $('#op').value = Math.round(S.opacity*100); $('#opV').textContent = Math.round(S.opacity*100) + '%';
+  $('#btnLock').classList.toggle('on', S.locked); setIcon($('#btnLock'), S.locked ? 'lock' : 'unlock');
+  $('#btnSheet').classList.toggle('on', !$('#sheet').hidden);
+  $$('#modeSeg .chip').forEach(b => b.classList.toggle('on', b.dataset.v === S.mode));
+  $('#outlineCtl').hidden = S.mode !== 'outline'; $('#normalCtl').style.display = S.mode === 'outline' ? 'none' : 'flex';
+  $('#detail').value = S.detail; $('#detailV').textContent = S.detail; $('#lineColor').value = S.lineColor; $('#smooth').checked = S.smooth;
+  $('#gray').checked = S.gray; $('#invert').checked = S.invert;
+  $('#bright').value = S.bright; $('#brightV').textContent = S.bright; $('#contrast').value = S.contrast; $('#contrastV').textContent = S.contrast;
+  $('#blend').value = S.blend; $('#gridOn').checked = S.grid; $('#gridN').value = S.gridN; $('#gridNV').textContent = S.gridN;
+  $('#frameOn').checked = S.frame; $('#mirrorOn').checked = S.mirror;
+  $('#flipH').classList.toggle('on', T.fx); $('#flipV').classList.toggle('on', T.fy);
+  const hasImg = !!src; ['size','rot','fit','fill','center','rotL','rotR','flipH','flipV','removeImg'].forEach(id => $('#' + id).disabled = !hasImg);
+  updateGrid(); updateCamUI(); syncSliders(); invalidate();
+}
+function updateGrid(){
+  const el = $('#gridOv'); el.hidden = !S.grid; if (!S.grid) return;
+  const w = 100/S.gridN;
+  el.style.backgroundImage = `linear-gradient(to right,#fff 1px,transparent 1px),linear-gradient(to bottom,#fff 1px,transparent 1px)`;
+  el.style.backgroundSize = `${w}vw ${w}vw`;
+}
+$('#op').addEventListener('input', e => { S.opacity = e.target.value/100; $('#opV').textContent = e.target.value + '%'; invalidate(); });
+$('#op').addEventListener('change', saveSoon);
+$('#btnLock').addEventListener('click', () => { S.locked = !S.locked; updateUI(); say(S.locked ? 'Image locked' : 'Image unlocked'); saveSoon(); });
+$('#btnSheet').addEventListener('click', () => { $('#sheet').hidden = !$('#sheet').hidden; updateUI(); });
+$$('#tabs button').forEach(b => b.addEventListener('click', () => {
+  $$('#tabs button').forEach(x => x.classList.toggle('act', x === b)); $$('.tab').forEach(t => t.classList.toggle('act', t.dataset.tab === b.dataset.tab));
+}));
+$('#size').addEventListener('input', e => { T.s = Math.max(0.005, fitScale()*e.target.value/100); $('#sizeV').textContent = e.target.value + '%'; invalidate(); });
+$('#rot').addEventListener('input', e => { T.r = e.target.value*DEG; $('#rotV').textContent = e.target.value + '°'; invalidate(); });
+['size','rot'].forEach(id => $('#' + id).addEventListener('change', saveSoon));
+const tBtn = (id, fn) => $('#' + id).addEventListener('click', () => { if (!src) return; fn(); updateUI(); saveSoon(); });
+tBtn('fit', () => fitImage(false)); tBtn('fill', () => fitImage(true)); tBtn('center', () => { T.x = W/2; T.y = H/2; });
+tBtn('rotL', () => { T.r = norm(T.r - Math.PI/2); }); tBtn('rotR', () => { T.r = norm(T.r + Math.PI/2); });
+tBtn('flipH', () => { T.fx = !T.fx; }); tBtn('flipV', () => { T.fy = !T.fy; });
+$$('#modeSeg .chip').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.v; updateUI(); processImage(); saveSoon(); }));
+const bindR = (id, key, fmt) => { $('#' + id).addEventListener('input', e => { S[key] = +e.target.value; if (fmt) fmt(e.target.value); scheduleProcess(); }); $('#' + id).addEventListener('change', saveSoon); };
+bindR('detail', 'detail', v => $('#detailV').textContent = v); bindR('bright', 'bright', v => $('#brightV').textContent = v); bindR('contrast', 'contrast', v => $('#contrastV').textContent = v);
+$('#lineColor').addEventListener('input', e => { S.lineColor = e.target.value; scheduleProcess(); });
+$('#lineColor').addEventListener('change', saveSoon);
+[['smooth','smooth'],['gray','gray'],['invert','invert']].forEach(([id, k]) => $('#' + id).addEventListener('change', e => { S[k] = e.target.checked; processImage(); saveSoon(); }));
+$('#blend').addEventListener('change', e => { S.blend = e.target.value; invalidate(); saveSoon(); });
+$('#gridOn').addEventListener('change', e => { S.grid = e.target.checked; updateGrid(); saveSoon(); });
+$('#gridN').addEventListener('input', e => { S.gridN = +e.target.value; $('#gridNV').textContent = e.target.value; updateGrid(); });
+$('#frameOn').addEventListener('change', e => { S.frame = e.target.checked; invalidate(); });
+$('#mirrorOn').addEventListener('change', e => { S.mirror = e.target.checked; applyMirror(); });
+
+function setHidden(h){ uiHidden = h; document.body.classList.toggle('nochrome', h); invalidate(); }
+$('#btnHide').addEventListener('click', () => setHidden(true));
+$('#showUI').addEventListener('click', () => setHidden(false));
+if (document.documentElement.requestFullscreen){
+  $('#btnFull').hidden = false;
+  $('#btnFull').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); });
+}
+
+window.addEventListener('keydown', e => {
+  if (['INPUT','SELECT'].includes(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
+  const k = e.key.toLowerCase();
+  if (k === 'h'){ setHidden(!uiHidden); return; }
+  if (k === 'l'){ $('#btnLock').click(); return; }
+  if (k === 'f'){ $('#camFreeze').click(); return; }
+  if (!src || S.locked) return;
+  const st = e.shiftKey ? 10 : 1;
+  if (k === 'arrowleft') T.x -= st; else if (k === 'arrowright') T.x += st; else if (k === 'arrowup') T.y -= st; else if (k === 'arrowdown') T.y += st;
+  else if (k === '+' || k === '=') T.s *= 1.03; else if (k === '-') T.s /= 1.03;
+  else if (k === '[') T.r = norm(T.r - DEG); else if (k === ']') T.r = norm(T.r + DEG); else return;
+  e.preventDefault(); syncSliders(); invalidate(); saveSoon();
+});
+
+/* ---------- remember last image and settings ---------- */
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('cameratrace', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const idbSet = async (k, v) => { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => rej(tx.error); }); };
+const idbGet = async k => { const db = await idb(); return new Promise((res, rej) => { const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => { db.close(); res(r.result); }; r.onerror = () => rej(r.error); }); };
+let saveT = 0, ready = false;
+function saveSoon(){ if (!ready) return; clearTimeout(saveT); saveT = setTimeout(async () => { try { await idbSet('state', { S, T, W, H, facing, blob: src ? src._blob : null }); } catch (_){} }, 600); }
+async function restore(){
+  try {
+    const s = await idbGet('state'); if (!s) return;
+    Object.assign(S, s.S); Object.assign(T, s.T); if (s.facing) facing = s.facing;
+    if (s.W && s.H){ const k = Math.min(W/s.W, H/s.H); T.x = W/2 + (T.x - s.W/2)*k; T.y = H/2 + (T.y - s.H/2)*k; T.s *= k; }
+    if (s.blob) await setImageFromBlob(s.blob, true);
+  } catch (_){}
+}
+
+(async function init(){
+  resize(); await restore(); ready = true;
+  if (src){ $('#btnPick').textContent = 'Use a different image'; }
+  updateUI(); updateStatus();
+})();
+})();
+</script>
+</body>
+</html>
